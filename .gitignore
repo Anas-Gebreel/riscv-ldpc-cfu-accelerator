@@ -1,0 +1,49 @@
+# Quartus
+db/
+incremental_db/
+output_files/
+simulation/
+greybox_tmp/
+hc_output/
+*.qws
+*.rpt
+*.summary
+*.smsg
+*.jdi
+*.pin
+*.pof
+*.sof
+*.done
+*.qarlog
+*.bak
+c5_pin_model_dump.txt
+
+# NEORV32 / RISC-V build
+*.o
+*.elf
+*.bin
+*.hex
+*.map
+main.asm
+neorv32_exe.bin
+neorv32_raw_exe.*
+neorv32_*_image.vhd
+
+# C reference build
+sim/reference/ldpc_minsum
+*.out
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# Plots output (regenerated)
+sim/plots/*.png
+
+# OS / editors
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/

@@ -1,0 +1,10 @@
+* text=auto eol=lf
+*.sv  text
+*.vhd text
+*.c   text
+*.h   text
+*.py  text
+*.sdc text
+*.png binary
+*.pdf binary
+*.sof binary
