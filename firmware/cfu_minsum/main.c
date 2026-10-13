@@ -1,40 +1,53 @@
-/* TODO(owner): replace with your real NEORV32 firmware (cfu_minsum/main.c).
- * This template shows how the custom instruction is invoked and timed, and how
- * results are shown on the board LEDs (no serial adapter needed).
- */
 #include <neorv32.h>
+#define minsum_hw(x)  RISCV_INSTR_R_TYPE(RISCV_OPCODE_CUSTOM0, 0b000, 0b0000000, x, 0)
 
-/* custom-0 R-type instruction: funct7=0000000, funct3=000. Adjust to match
- * the decode in your CFU wrapper. */
-#define CN_MINSUM(rs1, rs2) \
-    neorv32_cpu_cfu_r_type(0 /*funct7*/, 0 /*funct3*/, (rs1), (rs2))
-/* If that helper is unavailable in your NEORV32 version, use the intrinsic:
- * RISCV_INSTR_R_TYPE(RISCV_OPCODE_CUSTOM0, 0b000, 0b0000000, rs1, rs2)      */
+static void wait_ms(uint32_t ms){ neorv32_aux_delay_ms(neorv32_sysinfo_get_clk(), ms); }
 
-static inline uint32_t cycles(void) { return (uint32_t)neorv32_cpu_csr_read(CSR_MCYCLE); }
+uint32_t pack6(int m[6]){
+  uint32_t w=0;
+  for(int k=0;k<6;k++){ int s=(m[k]<0); int a=m[k]<0?-m[k]:m[k]; if(a>15)a=15;
+    w|=((uint32_t)((s<<4)|(a&0xF)))<<(k*5); }
+  return w;
+}
 
-int main(void) {
-    neorv32_rte_setup();
-    neorv32_gpio_port_set(0);
+int main(void){
+  neorv32_rte_setup();
+  int msg[6]={3,-5,2,-8,6,-4};
+  uint32_t packed=pack6(msg);
 
-    /* ---- example packed inputs (replace with real decoder messages) ---- */
-    uint32_t packed_msgs = 0x05030A01u;
+  uint32_t r=minsum_hw(packed);
+  int correct=(r==0xA32);
 
-    /* ---- software check-node (reference) ---- */
-    uint32_t t0 = cycles();
-    volatile uint32_t sw = 0; /* ... software min-sum over packed_msgs ... */
-    uint32_t t_sw = cycles() - t0;
+  const int LOOP=1000;
+  volatile uint32_t sink=0;
 
-    /* ---- hardware custom instruction ---- */
-    t0 = cycles();
-    volatile uint32_t hw = CN_MINSUM(packed_msgs, 0);
-    uint32_t t_hw = cycles() - t0;
+  neorv32_cpu_csr_write(CSR_MCYCLE,0);
+  for(int n=0;n<LOOP;n++) sink+=minsum_hw(packed);
+  uint32_t cfu=neorv32_cpu_csr_read(CSR_MCYCLE);
 
-    /* show correctness + speedup on the LEDs */
-    if (hw == sw) neorv32_gpio_port_set(0xFF);          /* all on = correct */
-    uint32_t speedup = (t_hw ? t_sw / t_hw : 0);
-    neorv32_gpio_port_set(speedup & 0xFF);              /* e.g. ~5 */
+  neorv32_cpu_csr_write(CSR_MCYCLE,0);
+  for(int n=0;n<LOOP;n++){ int a1=99,a2=99,ii=0,ss=0;
+    for(int k=0;k<6;k++){ int s=msg[k]<0; ss^=s; int mg=msg[k]<0?-msg[k]:msg[k];
+      if(mg<a1){a2=a1;a1=mg;ii=k;} else if(mg<a2)a2=mg; } sink+=a1+a2+ii+ss; }
+  uint32_t sw=neorv32_cpu_csr_read(CSR_MCYCLE);
+  (void)sink;
 
-    while (1) { }
-    return 0;
+  uint32_t sw_pc  = sw / LOOP;     // software cycles per check
+  uint32_t cfu_pc = cfu / LOOP;    // CFU cycles per check
+  uint32_t ratio  = (cfu>0) ? (sw/cfu) : 0;   // speedup
+
+  while(1){
+    if(!correct){ // wrong result -> fast blink
+      for(int i=0;i<10;i++){ neorv32_gpio_port_set(0xFF); wait_ms(150);
+                             neorv32_gpio_port_set(0x00); wait_ms(150); }
+      continue;
+    }
+    neorv32_gpio_port_set(0x00); wait_ms(4000);           // long dark = restart marker
+    neorv32_gpio_port_set(sw_pc  & 0xFF); wait_ms(5000);  // frame 1: SW cycles/check
+    neorv32_gpio_port_set(0x00); wait_ms(1500);
+    neorv32_gpio_port_set(cfu_pc & 0xFF); wait_ms(5000);  // frame 2: CFU cycles/check
+    neorv32_gpio_port_set(0x00); wait_ms(1500);
+    neorv32_gpio_port_set(ratio  & 0xFF); wait_ms(5000);  // frame 3: speedup
+  }
+  return 0;
 }

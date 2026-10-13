@@ -1,60 +1,60 @@
-// TODO(owner): replace this skeleton with your synthesised ldpc_minsum.sv
-// from the DE2-115 project. This template shows the intended interface so the
-// repo is self-describing; it is NOT the measured 128-LE design.
-//
-// Check-node min-sum kernel: given packed incoming message magnitudes/signs on
-// rs1 (and optionally rs2), compute the sign product and the first/second
-// minimum and return the outgoing check-node messages on `rd`.
-
-module ldpc_minsum #(
-    parameter int W = 6          // fixed-point datapath width (5-6 bit)
-)(
-    input  logic                 clk_i,
-    input  logic                 rstn_i,
-    input  logic                 start_i,   // from CFU: operands valid
-    input  logic [31:0]          rs1_i,     // packed incoming messages
-    input  logic [31:0]          rs2_i,     // (optional) control / second operand
-    output logic [31:0]          rd_o,      // packed outgoing messages
-    output logic                 done_o     // result valid
+// ============================================================================
+// ldpc_minsum - LDPC min-sum check-node kernel for the NEORV32 CFU
+// rs1 : six 5-bit signed messages packed as { [4]=sign, [3:0]=magnitude }
+//       message k -> rs1[k*5+4 : k*5],  k = 0..5   (bits 29..0)
+// rd  : { [11]=overall sign, [10:8]=index of min1, [7:4]=min2, [3:0]=min1 }
+// done pulses one cycle after start; rd is captured on start.
+// ============================================================================
+module ldpc_minsum (
+  input  logic        clk,
+  input  logic        rst_n,
+  input  logic        start,
+  input  logic [31:0] rs1,
+  output logic [31:0] rd,
+  output logic        done
 );
-    // --- Example: unpack up to (32/W) signed-magnitude messages ---
-    localparam int K = 32 / W;
-    logic signed [W-1:0] msg [K];
-    always_comb for (int i = 0; i < K; i++) msg[i] = rs1_i[i*W +: W];
 
-    // --- first/second minimum of |msg| and overall sign product ---
-    logic [W-1:0] mag  [K];
-    logic         sgn  [K];
-    always_comb for (int i = 0; i < K; i++) begin
-        sgn[i] = msg[i][W-1];
-        mag[i] = msg[i][W-1] ? (~msg[i] + 1'b1) : msg[i];
-    end
+  logic [3:0]  mag [0:5];
+  logic        sgn [0:5];
+  logic [3:0]  m1, m2;
+  logic [2:0]  i1;
+  logic        tot;
+  logic [31:0] rd_comb;
 
-    logic [W-1:0] min1, min2;
-    logic         signprod;
-    always_comb begin
-        min1 = '1; min2 = '1; signprod = 1'b0;
-        for (int i = 0; i < K; i++) begin
-            signprod ^= sgn[i];
-            if (mag[i] < min1) begin min2 = min1; min1 = mag[i]; end
-            else if (mag[i] < min2) begin min2 = mag[i]; end
-        end
+  always_comb begin
+    // unpack six 5-bit messages
+    for (int k = 0; k < 6; k++) begin
+      mag[k] = rs1[k*5 +: 4];
+      sgn[k] = rs1[k*5 + 4];
     end
+    // overall sign = XOR of all six signs
+    tot = 1'b0;
+    for (int k = 0; k < 6; k++) tot ^= sgn[k];
+    // smallest (m1), second-smallest (m2) magnitude, index of smallest (i1)
+    m1 = 4'hF; m2 = 4'hF; i1 = 3'd0;
+    for (int k = 0; k < 6; k++) begin
+      if (mag[k] < m1) begin
+        m2 = m1; m1 = mag[k]; i1 = k[2:0];
+      end else if (mag[k] < m2) begin
+        m2 = mag[k];
+      end
+    end
+    // pack result
+    rd_comb       = 32'd0;
+    rd_comb[3:0]  = m1;
+    rd_comb[7:4]  = m2;
+    rd_comb[10:8] = i1;
+    rd_comb[11]   = tot;
+  end
 
-    // --- outgoing message for each edge: exclude own magnitude (min1/min2) ---
-    logic signed [W-1:0] out [K];
-    always_comb for (int i = 0; i < K; i++) begin
-        logic [W-1:0] m = (mag[i] == min1) ? min2 : min1;      // exclude self
-        logic         s = signprod ^ sgn[i];                   // exclude self
-        out[i] = s ? (~m + 1'b1) : m;
+  always_ff @(posedge clk or negedge rst_n) begin
+    if (!rst_n) begin
+      rd   <= 32'd0;
+      done <= 1'b0;
+    end else begin
+      done <= start;            // 1-cycle latency: done pulses after start
+      if (start) rd <= rd_comb;  // capture result when triggered
     end
+  end
 
-    // single-cycle result (adjust pipelining to meet timing on your device)
-    always_ff @(posedge clk_i or negedge rstn_i) begin
-        if (!rstn_i) begin rd_o <= '0; done_o <= 1'b0; end
-        else begin
-            for (int i = 0; i < K; i++) rd_o[i*W +: W] <= out[i];
-            done_o <= start_i;
-        end
-    end
 endmodule
