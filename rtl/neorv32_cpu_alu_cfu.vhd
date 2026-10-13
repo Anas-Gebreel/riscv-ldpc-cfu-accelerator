@@ -1,0 +1,12 @@
+-- TODO(owner): replace with your actual NEORV32 CFU wrapper
+-- (neorv32_cpu_alu_cfu.vhd) that instantiates ldpc_minsum and maps it to the
+-- custom-0 R-type instruction. This stub documents the expected connections.
+--
+-- The NEORV32 CFU hands the kernel: clk_i, rstn_i, a start strobe, the two
+-- source operands (rs1/rs2) and the funct3/funct7 fields; the kernel returns
+-- the result word and a done strobe. See the NEORV32 data sheet, section
+-- "Custom Functions Unit (CFU)".
+--
+-- Instantiate the SystemVerilog kernel (ldpc_minsum) here, e.g. via a
+-- mixed-language Quartus project, wiring start_i <= rtype_valid, rs1_i <= rs1,
+-- rd_o -> res_o, done_o -> valid_o.
